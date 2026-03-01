@@ -1,0 +1,5 @@
+{
+  "description": "A tool to create SF2 SoundFonts from WAV samples and SFZ mapping files.",
+  "requestFramePermissions": [],
+  "name": "SF2 Forge"
+}
