@@ -6,6 +6,7 @@ import { SF2Builder } from './lib/sf2-builder';
 import { parseSFZ, SFZRegion } from './lib/sfz-parser';
 import { noteToMidi } from './lib/midi-utils';
 import { analyzeAndRepairSF2, SF2Analysis } from './lib/sf2-analyzer';
+import { extractSamplesFromSF2 } from './lib/sf2-extractor';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { Keyboard } from './components/Keyboard';
 import { UploadZone } from './components/UploadZone';
@@ -106,8 +107,8 @@ export default function App() {
     }
 
     if (sf2Files.length > 0) {
-      setLoadingStatus('Analyzing SF2...');
       for (const sf2File of sf2Files) {
+        setLoadingStatus(`Analyzing SF2: ${sf2File.name}...`);
         try {
           const analysis = await analyzeAndRepairSF2(sf2File);
           newFileInfos.push({
@@ -120,6 +121,14 @@ export default function App() {
               banks: analysis.stats.banks
             }
           });
+          
+          setLoadingStatus(`Extracting samples from ${sf2File.name}...`);
+          const extracted = await extractSamplesFromSF2(sf2File, ctx);
+          newSamples.push(...extracted);
+          
+          if (samples.length === 0 && newSamples.length === extracted.length) {
+             setSoundFontName(sf2File.name.replace(/\.[^/.]+$/, ""));
+          }
         } catch (e) {
           console.error("Failed to parse SF2 for info", e);
         }
@@ -191,6 +200,10 @@ export default function App() {
 
   const removeSample = (id: string) => {
     setSamples(prev => prev.filter(s => s.id !== id));
+  };
+
+  const removePreset = (bank: number, preset: number) => {
+    setSamples(prev => prev.filter(s => !((s.bank ?? 0) === bank && (s.preset ?? 0) === preset)));
   };
 
   const autoMapSamples = async () => {
@@ -412,32 +425,32 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen max-w-7xl mx-auto w-full p-5 box-border">
-      <header className="flex justify-between items-center mb-5 pb-5 border-b border-[#333]">
-        <div className="flex items-center gap-4">
-          <div className="text-2xl font-bold text-[#bb86fc] flex items-center gap-2.5">
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5 pb-5 border-b border-[#333]">
+        <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+          <div className="text-2xl font-bold text-[#bb86fc] flex items-center gap-2.5 whitespace-nowrap">
             <Piano className="w-8 h-8" />
             SF2 Forge
           </div>
-          <div className="h-8 w-px bg-[#333] mx-2"></div>
+          <div className="hidden lg:block h-8 w-px bg-[#333]"></div>
           <input 
             type="text" 
             value={soundFontName} 
             onChange={(e) => setSoundFontName(e.target.value)}
-            className="bg-[#1c1c1e] border border-[#333] text-white px-3 py-1.5 rounded-lg text-lg font-medium focus:border-[#bb86fc] outline-none w-64"
+            className="bg-[#1c1c1e] border border-[#333] text-white px-3 h-10 rounded-lg text-sm font-medium focus:border-[#bb86fc] outline-none w-full sm:w-64 transition-colors"
             placeholder="SoundFont Name"
           />
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           <button 
-            className="bg-[#bb86fc] text-black font-bold py-2 px-4 rounded flex items-center gap-2 hover:bg-[#a370f7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-4 rounded-lg flex items-center gap-2 hover:bg-[#3c3c3e] transition-colors disabled:opacity-50 whitespace-nowrap"
             onClick={autoMapSamples} 
             disabled={loading || samples.length === 0}
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Auto-Map with AI
+            {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#bb86fc]" /> : <Sparkles className="w-4 h-4 text-[#bb86fc]" />}
+            Auto-Map
           </button>
           <button 
-            className="bg-[#bb86fc] text-black font-bold py-2 px-4 rounded flex items-center gap-2 hover:bg-[#a370f7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+            className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-4 rounded-lg flex items-center gap-2 hover:bg-[#3c3c3e] transition-colors disabled:opacity-50 relative overflow-hidden whitespace-nowrap"
             disabled={loading}
           >
             <input 
@@ -446,21 +459,21 @@ export default function App() {
               className="absolute inset-0 opacity-0 cursor-pointer" 
               onChange={handleRepairSF2}
             />
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-4 h-4 text-[#bb86fc]" />
             Repair .SF2
           </button>
-          <div className="flex items-center gap-2 bg-[#1c1c1e] border border-[#333] rounded pl-2">
+          <div className="flex items-center bg-[#1c1c1e] border border-[#333] rounded-lg h-10 flex-1 sm:flex-none">
             <select 
               value={exportMode} 
               onChange={(e) => setExportMode(e.target.value as any)}
-              className="bg-transparent text-white text-sm font-medium focus:outline-none py-2 cursor-pointer"
+              className="bg-transparent text-white text-sm font-medium focus:outline-none px-3 h-full cursor-pointer border-r border-[#333] max-w-[140px] sm:max-w-none"
             >
-              <option value="all">Export: Single File</option>
-              <option value="bank">Export: Split by Bank</option>
-              <option value="preset">Export: Split by Preset</option>
+              <option value="all">Single File</option>
+              <option value="bank">Split by Bank</option>
+              <option value="preset">Split by Preset</option>
             </select>
             <button 
-              className="bg-[#bb86fc] text-black font-bold py-2 px-4 rounded-r flex items-center gap-2 hover:bg-[#a370f7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed h-full"
+              className="bg-[#bb86fc] text-black text-sm font-bold h-full px-4 rounded-r-lg flex items-center gap-2 hover:bg-[#a370f7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               onClick={exportSF2} 
               disabled={loading || samples.length === 0}
             >
@@ -503,6 +516,7 @@ export default function App() {
             samples={samples} 
             onUpdate={updateSample} 
             onRemove={removeSample} 
+            onRemovePreset={removePreset}
           />
         </section>
       </main>
