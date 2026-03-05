@@ -2,19 +2,23 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# SF2 Forge
 
-This contains everything you need to run your app locally.
+## Local development
 
-View your app in AI Studio: https://ai.studio/apps/565078d2-80aa-4b3d-a0ae-21ee7e37f980
+**Prerequisites:** Node.js
 
-## Run Locally
+1. Install dependencies: `npm install`
+2. Set `GEMINI_API_KEY` in `.env.local`
+3. Start dev server: `npm run dev`
 
-**Prerequisites:**  Node.js
+## GitHub Pages deployment
 
+The repository includes `.github/workflows/deploy.yml`, which builds and deploys `dist/` to GitHub Pages on pushes to `main`.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Required repository settings:
+
+1. In **Settings → Pages**, set **Source** to **GitHub Actions**.
+2. Ensure Actions are enabled for the repository.
+
+The Vite base path is computed from `GITHUB_REPOSITORY` in CI, so the generated asset URLs are compatible with the repository Pages URL.

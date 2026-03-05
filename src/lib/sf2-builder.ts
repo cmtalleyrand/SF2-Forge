@@ -172,7 +172,7 @@ export class SF2Builder {
         igenList.push({ op: GEN_OVERRIDINGROOTKEY, val: { amount: s.rootKey } });
         igenList.push({ op: GEN_SAMPLEID, val: { amount: sampleIndex } });
 
-        if (s.pan !== undefined) igenList.push({ op: GEN_PAN, val: { amount: Math.max(-500, Math.min(500, Math.round(s.pan * 5))) } });
+        if (s.pan !== undefined) igenList.push({ op: GEN_PAN, val: { amount: Math.max(-500, Math.min(500, Math.round(s.pan * 500))) } });
         if (s.volume !== undefined) igenList.push({ op: GEN_INITIALATTENUATION, val: { amount: Math.max(0, Math.min(1440, Math.round(-s.volume * 10))) } });
         if (s.tune !== undefined) igenList.push({ op: GEN_FINETUNE, val: { amount: Math.max(-99, Math.min(99, Math.round(s.tune))) } });
         
