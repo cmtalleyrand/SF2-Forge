@@ -21,9 +21,4 @@ Required repository settings:
 1. In **Settings → Pages**, set **Source** to **GitHub Actions**.
 2. Ensure Actions are enabled for the repository.
 
-The deployment workflow computes `VITE_BASE_PATH` before `npm run build`:
-
-- `/<repo>/` for project Pages repositories
-- `/` for user or organization Pages repositories (`*.github.io`)
-
-This guarantees that generated asset URLs are valid for the final Pages URL and prevents blank-page failures caused by incorrect absolute paths.
+The Vite base path is computed from `GITHUB_REPOSITORY` in CI, so the generated asset URLs are compatible with the repository Pages URL.
