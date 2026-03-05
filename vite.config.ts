@@ -5,7 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const isGithubActions = process.env.GITHUB_ACTIONS === 'true';
+    const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? '';
+
     return {
+      base: isGithubActions && repositoryName ? `/${repositoryName}/` : '/',
       server: {
         port: 3000,
         host: '0.0.0.0',
