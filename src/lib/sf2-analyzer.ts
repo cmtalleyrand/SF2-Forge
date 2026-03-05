@@ -81,7 +81,8 @@ export async function analyzeAndRepairSF2(file: File): Promise<SF2Analysis> {
           if (subId === 'inst') instrumentsCount = Math.max(0, Math.floor(subSize / 22) - 1);
           if (subId === 'shdr') samplesCount = Math.max(0, Math.floor(subSize / 46) - 1);
           
-          let subChunkData = new Uint8Array(buffer, pdtaOffset, 8 + subSize);
+          const actualSubSize = Math.min(8 + subSize, buffer.byteLength - pdtaOffset);
+          let subChunkData = new Uint8Array(buffer, pdtaOffset, actualSubSize);
           
           if (subId === 'phdr' && readString(pdtaOffset, 4) === 'phas') {
               const newSubChunkData = new Uint8Array(subChunkData);

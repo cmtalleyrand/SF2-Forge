@@ -6,6 +6,7 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
   const sf2 = new SoundFont2(new Uint8Array(buffer));
   
   const extractedSamples: SampleData[] = [];
+  const sampleBufferCache = new Map<string, AudioBuffer>();
   
   for (const preset of sf2.presets) {
     const presetName = preset.header.name;
@@ -20,16 +21,22 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
         
         const sf2Sample = iZone.sample;
         const sampleName = sf2Sample.header.name;
+        const sampleKey = `${sampleName}_${sf2Sample.header.start}_${sf2Sample.header.end}`;
         
-        // Convert Int16Array to Float32Array for AudioBuffer
-        const int16Data = sf2Sample.data;
-        const float32Data = new Float32Array(int16Data.length);
-        for (let i = 0; i < int16Data.length; i++) {
-          float32Data[i] = int16Data[i] / 32768.0;
+        let audioBuffer = sampleBufferCache.get(sampleKey);
+        
+        if (!audioBuffer) {
+          // Convert Int16Array to Float32Array for AudioBuffer
+          const int16Data = sf2Sample.data;
+          const float32Data = new Float32Array(int16Data.length);
+          for (let i = 0; i < int16Data.length; i++) {
+            float32Data[i] = int16Data[i] / 32768.0;
+          }
+          
+          audioBuffer = ctx.createBuffer(1, float32Data.length, sf2Sample.header.sampleRate);
+          audioBuffer.getChannelData(0).set(float32Data);
+          sampleBufferCache.set(sampleKey, audioBuffer);
         }
-        
-        const audioBuffer = ctx.createBuffer(1, float32Data.length, sf2Sample.header.sampleRate);
-        audioBuffer.getChannelData(0).set(float32Data);
         
         // Extract generators
         const pGens = pZone.generators || {};
@@ -57,13 +64,19 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
         const volume = (iGens[GeneratorType.InitialAttenuation]?.value ?? 0) / 10.0; // SF2 attenuation is in centibels
         const tune = iGens[GeneratorType.FineTune]?.value ?? 0;
         
+        // Envelope settings
+        const attack = iGens[34]?.value; // AttackVolEnv
+        const decay = iGens[36]?.value; // DecayVolEnv
+        const sustain = iGens[37]?.value; // SustainVolEnv
+        const release = iGens[38]?.value; // ReleaseVolEnv
+
         const sampleModes = iGens[GeneratorType.SampleModes]?.value ?? 0;
         let loopMode = 'no_loop';
         if (sampleModes === 1) loopMode = 'loop_continuous';
         else if (sampleModes === 3) loopMode = 'loop_sustain';
         
         // Create a dummy File object for the sample
-        const dummyFile = new File([float32Data], `${sampleName}.wav`, { type: 'audio/wav' });
+        const dummyFile = new File([audioBuffer.getChannelData(0)], `${sampleName}.wav`, { type: 'audio/wav' });
         
         extractedSamples.push({
           id: Math.random().toString(36).substr(2, 9),
@@ -83,6 +96,10 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
           loopMode,
           loopStart: sf2Sample.header.startLoop - sf2Sample.header.start,
           loopEnd: sf2Sample.header.endLoop - sf2Sample.header.start,
+          attack: attack !== undefined ? Math.pow(2, attack / 1200) : undefined,
+          decay: decay !== undefined ? Math.pow(2, decay / 1200) : undefined,
+          sustain: sustain !== undefined ? 100 * Math.pow(10, -sustain / 200) : undefined,
+          release: release !== undefined ? Math.pow(2, release / 1200) : undefined,
         });
       }
     }

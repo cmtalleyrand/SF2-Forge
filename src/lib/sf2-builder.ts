@@ -78,6 +78,7 @@ export class SF2Builder {
     const bufferToSampleIndex = new Map<AudioBuffer, number>();
     const uniqueSamples: Sample[] = [];
 
+    // Only process samples that are actually in this builder instance
     for (const s of this.samples) {
       if (!bufferToSampleIndex.has(s.buffer)) {
         bufferToSampleIndex.set(s.buffer, uniqueSamples.length);
@@ -181,10 +182,10 @@ export class SF2Builder {
         else if (s.loopStart !== undefined && s.loopEnd !== undefined) sampleMode = 1;
         if (sampleMode > 0) igenList.push({ op: GEN_SAMPLEMODES, val: { amount: sampleMode } });
 
-        if (s.attack !== undefined) igenList.push({ op: GEN_ATTACKVOLENV, val: { amount: secondsToTimecents(s.attack) } });
-        if (s.decay !== undefined) igenList.push({ op: GEN_DECAYVOLENV, val: { amount: secondsToTimecents(s.decay) } });
-        if (s.sustain !== undefined) igenList.push({ op: GEN_SUSTAINVOLENV, val: { amount: sustainToCentibels(s.sustain) } });
-        if (s.release !== undefined) igenList.push({ op: GEN_RELEASEVOLENV, val: { amount: secondsToTimecents(s.release) } });
+        igenList.push({ op: GEN_ATTACKVOLENV, val: { amount: secondsToTimecents(s.attack ?? 0.001) } });
+        igenList.push({ op: GEN_DECAYVOLENV, val: { amount: secondsToTimecents(s.decay ?? 0.1) } });
+        igenList.push({ op: GEN_SUSTAINVOLENV, val: { amount: sustainToCentibels(s.sustain ?? 100) } });
+        igenList.push({ op: GEN_RELEASEVOLENV, val: { amount: secondsToTimecents(s.release ?? 0.1) } });
       }
 
       // Add Preset
@@ -281,7 +282,7 @@ export class SF2Builder {
       const off = i * size;
       this.writeFixedString(view, off, item.name, 20);
       view.setUint16(off + 20, item.preset, true);
-      view.setUint16(off + 22, item.bank, true);
+      view.setUint16(off + 22, item.bank & 0x7FFF, true); // Ensure MSB is not set unexpectedly
       view.setUint16(off + 24, item.bagNdx, true);
       view.setUint32(off + 26, item.library || 0, true);
       view.setUint32(off + 30, item.genre || 0, true);

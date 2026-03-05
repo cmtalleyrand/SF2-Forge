@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, FileAudio, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, FileAudio, Trash2, ChevronDown, ChevronRight, Edit2, Check } from 'lucide-react';
 
 export interface SampleData {
   id: string;
@@ -30,10 +30,14 @@ interface SampleListProps {
   onUpdate: (id: string, field: keyof SampleData, value: any) => void;
   onRemove: (id: string) => void;
   onRemovePreset?: (bank: number, preset: number) => void;
+  onUpdatePreset?: (oldBank: number, oldPreset: number, newBank: number, newPreset: number) => void;
 }
 
-export const SampleList: React.FC<SampleListProps> = ({ samples, onUpdate, onRemove, onRemovePreset }) => {
+export const SampleList: React.FC<SampleListProps> = ({ samples, onUpdate, onRemove, onRemovePreset, onUpdatePreset }) => {
   const [expandedPresets, setExpandedPresets] = useState<Set<string>>(new Set());
+  const [editingPreset, setEditingPreset] = useState<string | null>(null);
+  const [editBank, setEditBank] = useState<number>(0);
+  const [editPresetNum, setEditPresetNum] = useState<number>(0);
 
   const groupedSamples = useMemo(() => {
     const groups = new Map<string, SampleData[]>();
@@ -86,13 +90,75 @@ export const SampleList: React.FC<SampleListProps> = ({ samples, onUpdate, onRem
           return (
             <div key={key} className="flex flex-col gap-1">
               <div className="flex items-center justify-between bg-[#1c1c1e] p-2 rounded border border-[#333] hover:border-[#444] transition-colors">
-                <button 
-                  className="flex items-center gap-2 text-sm font-bold text-[#bb86fc] flex-1 text-left"
-                  onClick={() => togglePreset(key)}
-                >
-                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  Bank {bank} : Preset {preset} - {presetName} ({groupSamples.length} samples)
-                </button>
+                <div className="flex items-center gap-2 flex-1">
+                  <button 
+                    className="flex items-center gap-2 text-sm font-bold text-[#bb86fc] text-left"
+                    onClick={() => togglePreset(key)}
+                  >
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                  
+                  {editingPreset === key ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-[#bb86fc]">Bank</span>
+                      <input 
+                        type="number" 
+                        value={editBank} 
+                        onChange={(e) => setEditBank(parseInt(e.target.value) || 0)}
+                        className="bg-[#111] border border-[#333] text-white p-1 rounded w-16 text-center text-xs focus:border-[#bb86fc] outline-none"
+                        min="0" max="128"
+                      />
+                      <span className="text-sm font-bold text-[#bb86fc]">: Preset</span>
+                      <input 
+                        type="number" 
+                        value={editPresetNum} 
+                        onChange={(e) => setEditPresetNum(parseInt(e.target.value) || 0)}
+                        className="bg-[#111] border border-[#333] text-white p-1 rounded w-16 text-center text-xs focus:border-[#bb86fc] outline-none"
+                        min="0" max="127"
+                      />
+                      <span className="text-sm font-bold text-[#bb86fc]">- {presetName} ({groupSamples.length} samples)</span>
+                      <button 
+                        onClick={() => {
+                          if (onUpdatePreset) {
+                            onUpdatePreset(bank, preset, editBank, editPresetNum);
+                          }
+                          setEditingPreset(null);
+                        }}
+                        className="text-[#50fa7b] hover:text-[#70fa9b] p-1 rounded hover:bg-[#50fa7b]/10 transition-colors ml-2"
+                        title="Save changes"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setEditingPreset(null)}
+                        className="text-[#ff5555] hover:text-[#ff8888] p-1 rounded hover:bg-[#ff5555]/10 transition-colors"
+                        title="Cancel"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-[#bb86fc]">
+                        Bank {bank} : Preset {preset} - {presetName} ({groupSamples.length} samples)
+                      </span>
+                      {onUpdatePreset && (
+                        <button 
+                          onClick={() => {
+                            setEditBank(bank);
+                            setEditPresetNum(preset);
+                            setEditingPreset(key);
+                          }}
+                          className="text-[#a0a0a0] hover:text-white p-1 rounded hover:bg-[#333] transition-colors"
+                          title="Edit Bank/Preset"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
                 {onRemovePreset && (
                   <button 
                     onClick={() => onRemovePreset(bank, preset)}

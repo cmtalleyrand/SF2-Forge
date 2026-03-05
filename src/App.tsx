@@ -23,6 +23,7 @@ export default function App() {
   const [repairResult, setRepairResult] = useState<SF2Analysis | null>(null);
   const [soundFontName, setSoundFontName] = useState('My SoundFont');
   const [exportMode, setExportMode] = useState<'all' | 'bank' | 'preset'>('all');
+  const [forceBankZero, setForceBankZero] = useState(true);
 
   const { activeNote, playNote, stopNote, getAudioCtx } = useAudioPlayer(samples);
 
@@ -123,7 +124,11 @@ export default function App() {
           });
           
           setLoadingStatus(`Extracting samples from ${sf2File.name}...`);
-          const extracted = await extractSamplesFromSF2(sf2File, ctx);
+          let fileToExtract = sf2File;
+          if (analysis.needsRepair && analysis.repairedBuffer) {
+            fileToExtract = new File([analysis.repairedBuffer], sf2File.name, { type: sf2File.type });
+          }
+          const extracted = await extractSamplesFromSF2(fileToExtract, ctx);
           newSamples.push(...extracted);
           
           if (samples.length === 0 && newSamples.length === extracted.length) {
@@ -204,6 +209,49 @@ export default function App() {
 
   const removePreset = (bank: number, preset: number) => {
     setSamples(prev => prev.filter(s => !((s.bank ?? 0) === bank && (s.preset ?? 0) === preset)));
+  };
+
+  const updatePreset = (oldBank: number, oldPreset: number, newBank: number, newPreset: number) => {
+    setSamples(prev => prev.map(s => {
+      if ((s.bank ?? 0) === oldBank && (s.preset ?? 0) === oldPreset) {
+        return { ...s, bank: newBank, preset: newPreset };
+      }
+      return s;
+    }));
+  };
+
+  const setAllBanksToZero = () => {
+    setSamples(prev => {
+      // Group by current bank and preset to find unique presets
+      const uniquePresets = new Map<string, SampleData[]>();
+      prev.forEach(s => {
+        const key = `${s.bank || 0}-${s.preset || 0}`;
+        if (!uniquePresets.has(key)) uniquePresets.set(key, []);
+        uniquePresets.get(key)!.push(s);
+      });
+
+      // Reassign to bank 0 with sequential preset numbers
+      let nextPresetNum = 0;
+      const updatedSamples: SampleData[] = [];
+      
+      // Sort keys to maintain some order (e.g., Bank 0 first, then Bank 1)
+      const sortedKeys = Array.from(uniquePresets.keys()).sort((a, b) => {
+        const [bankA, presetA] = a.split('-').map(Number);
+        const [bankB, presetB] = b.split('-').map(Number);
+        if (bankA !== bankB) return bankA - bankB;
+        return presetA - presetB;
+      });
+
+      for (const key of sortedKeys) {
+        const samplesInPreset = uniquePresets.get(key)!;
+        samplesInPreset.forEach(s => {
+          updatedSamples.push({ ...s, bank: 0, preset: nextPresetNum });
+        });
+        nextPresetNum++;
+      }
+
+      return updatedSamples;
+    });
   };
 
   const autoMapSamples = async () => {
@@ -327,7 +375,10 @@ export default function App() {
     try {
       if (exportMode === 'all') {
         const builder = new SF2Builder();
-        samples.forEach(s => builder.addSample(s));
+        
+        samples.forEach(s => {
+          builder.addSample(forceBankZero ? { ...s, bank: 0 } : s);
+        });
         const sf2Data = builder.build(soundFontName);
         const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
         const url = URL.createObjectURL(blob);
@@ -346,7 +397,7 @@ export default function App() {
 
         if (banks.size === 1) {
           const builder = new SF2Builder();
-          samples.forEach(s => builder.addSample(s));
+          samples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0 } : s));
           const sf2Data = builder.build(soundFontName);
           const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
           const url = URL.createObjectURL(blob);
@@ -360,7 +411,8 @@ export default function App() {
           const zip = new JSZip();
           for (const [bank, bankSamples] of banks.entries()) {
             const builder = new SF2Builder();
-            bankSamples.forEach(s => builder.addSample(s));
+            // Force bank to 0 for the individual bank file if requested
+            bankSamples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0 } : s));
             const sf2Data = builder.build(`${soundFontName} Bank ${bank}`);
             zip.file(`${soundFontName}_Bank_${bank}.sf2`, sf2Data);
           }
@@ -384,7 +436,7 @@ export default function App() {
 
         if (presets.size === 1) {
           const builder = new SF2Builder();
-          samples.forEach(s => builder.addSample(s));
+          samples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0, preset: 0 } : s));
           const sf2Data = builder.build(soundFontName);
           const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
           const url = URL.createObjectURL(blob);
@@ -401,7 +453,8 @@ export default function App() {
             const p = presetSamples[0].preset || 0;
             const pName = presetSamples[0].presetName || `P${p}`;
             const builder = new SF2Builder();
-            presetSamples.forEach(s => builder.addSample(s));
+            // Force bank and preset to 0 for the individual preset file if requested
+            presetSamples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0, preset: 0 } : s));
             const sf2Data = builder.build(`${soundFontName} ${pName}`);
             zip.file(`${soundFontName}_B${b}_${pName}.sf2`, sf2Data);
           }
@@ -443,6 +496,14 @@ export default function App() {
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           <button 
             className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-4 rounded-lg flex items-center gap-2 hover:bg-[#3c3c3e] transition-colors disabled:opacity-50 whitespace-nowrap"
+            onClick={setAllBanksToZero} 
+            disabled={loading || samples.length === 0}
+            title="Set all bank numbers to 0 (useful for some Android DAWs)"
+          >
+            Bank 0
+          </button>
+          <button 
+            className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-4 rounded-lg flex items-center gap-2 hover:bg-[#3c3c3e] transition-colors disabled:opacity-50 whitespace-nowrap"
             onClick={autoMapSamples} 
             disabled={loading || samples.length === 0}
           >
@@ -462,6 +523,18 @@ export default function App() {
             <Sparkles className="w-4 h-4 text-[#bb86fc]" />
             Repair .SF2
           </button>
+          <div className="flex items-center gap-2 bg-[#1c1c1e] border border-[#333] rounded-lg h-10 px-3">
+            <input 
+              type="checkbox" 
+              id="forceBankZero"
+              checked={forceBankZero}
+              onChange={(e) => setForceBankZero(e.target.checked)}
+              className="accent-[#bb86fc] cursor-pointer"
+            />
+            <label htmlFor="forceBankZero" className="text-white text-sm font-medium cursor-pointer whitespace-nowrap" title="Force bank to 0 on export (fixes MSB issues in some DAWs)">
+              Force Bank 0
+            </label>
+          </div>
           <div className="flex items-center bg-[#1c1c1e] border border-[#333] rounded-lg h-10 flex-1 sm:flex-none">
             <select 
               value={exportMode} 
@@ -517,6 +590,7 @@ export default function App() {
             onUpdate={updateSample} 
             onRemove={removeSample} 
             onRemovePreset={removePreset}
+            onUpdatePreset={updatePreset}
           />
         </section>
       </main>
