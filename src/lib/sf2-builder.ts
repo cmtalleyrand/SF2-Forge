@@ -150,7 +150,7 @@ export class SF2Builder {
     // the same program number across different banks.
     const presets = new Map<string, Sample[]>();
     for (const s of this.samples) {
-      const bank = s.bank ?? 0;
+      const bank = (s.bank ?? 0) & 0x7FFF;
       const preset = s.preset ?? 0;
       const key = `${bank}-${preset}`;
       if (!presets.has(key)) presets.set(key, []);
