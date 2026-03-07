@@ -146,19 +146,30 @@ export class SF2Builder {
     const pbagList: any[] = [];
     const phasList: any[] = [];
 
-    // Group samples by preset
-    const presets = new Map<number, Sample[]>();
+    // Group samples by (bank, preset) to avoid collapsing presets that share
+    // the same program number across different banks.
+    const presets = new Map<string, Sample[]>();
     for (const s of this.samples) {
-      const p = s.preset || 0;
-      if (!presets.has(p)) presets.set(p, []);
-      presets.get(p)!.push(s);
+      const bank = s.bank ?? 0;
+      const preset = s.preset ?? 0;
+      const key = `${bank}-${preset}`;
+      if (!presets.has(key)) presets.set(key, []);
+      presets.get(key)!.push(s);
     }
 
+    const sortedPresets = Array.from(presets.entries()).sort(([keyA], [keyB]) => {
+      const [bankA, presetA] = keyA.split('-').map(Number);
+      const [bankB, presetB] = keyB.split('-').map(Number);
+      if (bankA !== bankB) return bankA - bankB;
+      return presetA - presetB;
+    });
+
     let instNdx = 0;
-    for (const [presetId, presetSamples] of presets.entries()) {
+    for (const [presetKey, presetSamples] of sortedPresets) {
+      const [bankId, presetId] = presetKey.split('-').map(Number);
       // Find a name for this preset
       const customName = presetSamples.find(s => s.presetName)?.presetName;
-      const presetName = customName || (presets.size === 1 ? soundFontName : `${soundFontName} P${presetId}`);
+      const presetName = customName || (sortedPresets.length === 1 ? soundFontName : `${soundFontName} B${bankId}P${presetId}`);
       const instName = presetName;
 
       // Add Instrument
@@ -192,7 +203,7 @@ export class SF2Builder {
       phasList.push({ 
         name: presetName, 
         preset: presetId, 
-        bank: presetSamples[0].bank || 0, 
+        bank: bankId,
         bagNdx: pbagList.length 
       });
 
