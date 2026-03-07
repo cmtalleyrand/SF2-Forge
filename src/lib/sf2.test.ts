@@ -67,6 +67,39 @@ describe('SF2Builder', () => {
     expect(parsed.presets[0].header.bank).toBe(0);
   });
 
+
+  it('should group presets by serialized bank identity to prevent duplicate headers', () => {
+    const builder = new SF2Builder();
+    const makeSample = (id: string, bank: number): SampleData => ({
+      id,
+      name: `test-${id}`,
+      file: new File([], `test-${id}.wav`),
+      buffer: {
+        length: 100,
+        sampleRate: 44100,
+        numberOfChannels: 1,
+        duration: 100 / 44100,
+        copyFromChannel: () => {},
+        copyToChannel: () => {},
+        getChannelData: () => new Float32Array(100)
+      } as unknown as AudioBuffer,
+      rootKey: 60,
+      lowKey: 0,
+      highKey: 127,
+      sampleRate: 44100,
+      bank,
+      preset: 3
+    });
+
+    builder.addSample(makeSample('a', 1));
+    builder.addSample(makeSample('b', 32769));
+    const sf2Data = builder.build('Test SoundFont');
+
+    const parsed = new SoundFont2(sf2Data);
+    expect(parsed.presets.length).toBe(1);
+    expect(parsed.presets[0].header.bank).toBe(1);
+    expect(parsed.presets[0].header.preset).toBe(3);
+  });
   it('should keep distinct presets when program is shared across banks', () => {
     const builder = new SF2Builder();
     const makeSample = (id: string, bank: number): SampleData => ({
