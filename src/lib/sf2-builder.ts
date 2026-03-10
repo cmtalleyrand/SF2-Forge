@@ -73,6 +73,15 @@ function sustainToCentibels(sustainLevel: number): number {
   return Math.max(0, Math.min(1440, Math.round(-db * 10)));
 }
 
+function resolveEffectiveLoopBounds(sample: Sample): { start: number; end: number } {
+  const sampleLength = sample.buffer.length;
+  const rawLoopStart = sample.loopStart ?? 8;
+  const rawLoopEnd = sample.loopEnd ?? (sampleLength - 8);
+  const loopStart = Math.max(0, Math.min(rawLoopStart, sampleLength));
+  const loopEnd = Math.max(loopStart, Math.min(rawLoopEnd, sampleLength));
+  return { start: loopStart, end: loopEnd };
+}
+
 export class SF2Builder {
   private samples: Sample[] = [];
 
@@ -91,7 +100,8 @@ export class SF2Builder {
 
     // Only process samples that are actually in this builder instance
     for (const s of this.samples) {
-      const variantKey = `${s.sampleRate}|${s.rootKey}|${s.loopStart ?? 'auto'}|${s.loopEnd ?? 'auto'}`;
+      const effectiveLoop = resolveEffectiveLoopBounds(s);
+      const variantKey = `${s.sampleRate}|${s.rootKey}|${effectiveLoop.start}|${effectiveLoop.end}`;
       let variantsForBuffer = bufferVariants.get(s.buffer);
       if (!variantsForBuffer) {
         variantsForBuffer = new Map<string, number>();
@@ -118,10 +128,9 @@ export class SF2Builder {
 
       const start = currentOffset;
       const end = currentOffset + floatData.length;
-      const rawLoopStart = sample.loopStart !== undefined ? start + sample.loopStart : start + 8;
-      const rawLoopEnd = sample.loopEnd !== undefined ? start + sample.loopEnd : end - 8;
-      const loopStart = Math.max(start, Math.min(rawLoopStart, end));
-      const loopEnd = Math.max(loopStart, Math.min(rawLoopEnd, end));
+      const effectiveLoop = resolveEffectiveLoopBounds(sample);
+      const loopStart = start + effectiveLoop.start;
+      const loopEnd = start + effectiveLoop.end;
 
       sampleDataParts.push(pcm16);
 
