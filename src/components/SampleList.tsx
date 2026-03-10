@@ -160,8 +160,12 @@ export const SampleList: React.FC<SampleListProps> = ({ samples, onUpdate, onRem
                 </div>
                 
                 {onRemovePreset && (
-                  <button 
-                    onClick={() => onRemovePreset(bank, preset)}
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Remove all ${groupSamples.length} sample(s) in preset "${presetName}"?`)) {
+                        onRemovePreset(bank, preset);
+                      }
+                    }}
                     className="text-[#ff5555] hover:text-[#ff8888] p-1 rounded hover:bg-[#ff5555]/10 transition-colors flex items-center gap-1 text-xs font-bold"
                     title="Remove entire preset"
                   >
@@ -238,7 +242,9 @@ export const SampleList: React.FC<SampleListProps> = ({ samples, onUpdate, onRem
                         />
                       </div>
                       <button
-                        onClick={() => onRemove(s.id)}
+                        onClick={() => {
+                          if (window.confirm(`Remove sample "${s.name}"?`)) onRemove(s.id);
+                        }}
                         className="w-8 h-8 flex items-center justify-center text-[#ff6b6b] hover:bg-[#ff6b6b]/10 rounded transition-colors"
                         title="Remove sample"
                       >

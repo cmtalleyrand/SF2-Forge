@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { SampleData } from '../components/SampleList';
 
 export function useAudioPlayer(samples: SampleData[]) {
@@ -6,9 +6,16 @@ export function useAudioPlayer(samples: SampleData[]) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const activeSources = useRef(new Map<number, AudioBufferSourceNode>());
 
+  useEffect(() => {
+    return () => {
+      audioCtxRef.current?.close();
+      audioCtxRef.current = null;
+    };
+  }, []);
+
   const getAudioCtx = () => {
     if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = new AudioContext();
     }
     return audioCtxRef.current;
   };

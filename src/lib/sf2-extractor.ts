@@ -40,8 +40,19 @@ function resolveKeyRange(...generators: GeneratorMap[]): { lo: number; hi: numbe
 }
 
 export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Promise<SampleData[]> {
-  const buffer = await file.arrayBuffer();
-  const sf2 = new SoundFont2(new Uint8Array(buffer));
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch (err) {
+    throw new Error(`Failed to read file "${file.name}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let sf2: SoundFont2;
+  try {
+    sf2 = new SoundFont2(new Uint8Array(buffer));
+  } catch (err) {
+    throw new Error(`Failed to parse SF2 file "${file.name}": ${err instanceof Error ? err.message : String(err)}`);
+  }
   
   const extractedSamples: SampleData[] = [];
   const sampleBufferCache = new Map<string, AudioBuffer>();
@@ -104,8 +115,10 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
         if (sampleModes === 1) loopMode = 'loop_continuous';
         else if (sampleModes === 3) loopMode = 'loop_sustain';
         
-        // Create a dummy File object for the sample
-        const dummyFile = new File([audioBuffer.getChannelData(0)], `${sampleName}.wav`, { type: 'audio/wav' });
+        // Represent the extracted sample as a File. The content is the raw Int16 PCM
+        // bytes from the SF2 (not a valid WAV container), but the File is only used
+        // for metadata (name display) — the AudioBuffer is the actual audio source.
+        const dummyFile = new File([sf2Sample.data.buffer], `${sampleName}.pcm`, { type: 'audio/x-raw' });
         
         extractedSamples.push({
           id: Math.random().toString(36).substr(2, 9),
@@ -125,10 +138,10 @@ export async function extractSamplesFromSF2(file: File, ctx: AudioContext): Prom
           loopMode,
           loopStart: sf2Sample.header.startLoop - sf2Sample.header.start,
           loopEnd: sf2Sample.header.endLoop - sf2Sample.header.start,
-          attack: attack !== undefined ? Math.pow(2, attack / 1200) : undefined,
-          decay: decay !== undefined ? Math.pow(2, decay / 1200) : undefined,
-          sustain: sustain !== undefined ? 100 * Math.pow(10, -sustain / 200) : undefined,
-          release: release !== undefined ? Math.pow(2, release / 1200) : undefined,
+          attack: attack !== undefined ? Math.pow(2, Math.max(-12000, Math.min(8000, attack)) / 1200) : undefined,
+          decay: decay !== undefined ? Math.pow(2, Math.max(-12000, Math.min(8000, decay)) / 1200) : undefined,
+          sustain: sustain !== undefined ? Math.max(0, Math.min(100, 100 * Math.pow(10, -Math.max(0, sustain) / 200))) : undefined,
+          release: release !== undefined ? Math.pow(2, Math.max(-12000, Math.min(8000, release)) / 1200) : undefined,
         });
       }
     }

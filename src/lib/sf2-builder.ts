@@ -40,6 +40,16 @@ const FOURCC_igen = 'igen';
 const FOURCC_imod = 'imod';
 const FOURCC_shdr = 'shdr';
 
+interface SampleHeader {
+  name: string; start: number; end: number; loopStart: number; loopEnd: number;
+  sampleRate: number; originalPitch: number; pitchCorrection: number; sampleLink: number; sampleType: number;
+}
+interface GenEntry { op: number; val: number | { amount: number } | { lo: number; hi: number } }
+interface BagEntry { genNdx: number; modNdx: number }
+interface InstEntry { name: string; bagNdx: number }
+interface PresetEntry { name: string; preset: number; bank: number; bagNdx: number; library?: number; genre?: number; morphology?: number }
+interface ModEntry { src: number; dest: number; amt: number; amtSrc: number; trans: number }
+
 const GEN_KEYRANGE = 43;
 const GEN_SAMPLEID = 53;
 const GEN_OVERRIDINGROOTKEY = 58;
@@ -72,7 +82,7 @@ export class SF2Builder {
 
   build(soundFontName: string = 'Gemini SoundFont'): Uint8Array {
     const sampleDataParts: Int16Array[] = [];
-    const sampleHeaders: any[] = [];
+    const sampleHeaders: SampleHeader[] = [];
     let currentOffset = 0;
 
     const bufferToSampleIndex = new Map<AudioBuffer, number>();
@@ -96,8 +106,10 @@ export class SF2Builder {
 
       const start = currentOffset;
       const end = currentOffset + floatData.length;
-      const loopStart = sample.loopStart !== undefined ? start + sample.loopStart : start + 8;
-      const loopEnd = sample.loopEnd !== undefined ? start + sample.loopEnd : end - 8;
+      const rawLoopStart = sample.loopStart !== undefined ? start + sample.loopStart : start + 8;
+      const rawLoopEnd = sample.loopEnd !== undefined ? start + sample.loopEnd : end - 8;
+      const loopStart = Math.max(start, Math.min(rawLoopStart, end));
+      const loopEnd = Math.max(loopStart, Math.min(rawLoopEnd, end));
 
       sampleDataParts.push(pcm16);
 
@@ -138,13 +150,13 @@ export class SF2Builder {
       offset += part.byteLength;
     }
 
-    const igenList: any[] = [];
-    const ibagList: any[] = [];
-    const instList: any[] = [];
+    const igenList: GenEntry[] = [];
+    const ibagList: BagEntry[] = [];
+    const instList: InstEntry[] = [];
 
-    const pgenList: any[] = [];
-    const pbagList: any[] = [];
-    const phasList: any[] = [];
+    const pgenList: GenEntry[] = [];
+    const pbagList: BagEntry[] = [];
+    const phasList: PresetEntry[] = [];
 
     // Group samples by (bank, preset) to avoid collapsing presets that share
     // the same program number across different banks.
@@ -154,7 +166,7 @@ export class SF2Builder {
       const preset = s.preset ?? 0;
       const key = `${bank}-${preset}`;
       if (!presets.has(key)) presets.set(key, []);
-      presets.get(key)!.push(s);
+      presets.get(key)?.push(s);
     }
 
     const sortedPresets = Array.from(presets.entries()).sort(([keyA], [keyB]) => {
@@ -177,7 +189,7 @@ export class SF2Builder {
 
       // Add Instrument Zones
       for (const s of presetSamples) {
-        const sampleIndex = bufferToSampleIndex.get(s.buffer)!;
+        const sampleIndex = bufferToSampleIndex.get(s.buffer) ?? 0;
         ibagList.push({ genNdx: igenList.length, modNdx: 0 });
         igenList.push({ op: GEN_KEYRANGE, val: { lo: s.lowKey, hi: s.highKey } });
         igenList.push({ op: GEN_OVERRIDINGROOTKEY, val: { amount: s.rootKey } });
@@ -285,7 +297,7 @@ export class SF2Builder {
     ]);
   }
 
-  private createPhdr(items: any[]): Uint8Array {
+  private createPhdr(items: PresetEntry[]): Uint8Array {
     const size = 38;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -302,7 +314,7 @@ export class SF2Builder {
     return this.createChunk(FOURCC_phdr, [buf]);
   }
 
-  private createPbag(items: any[]): Uint8Array {
+  private createPbag(items: BagEntry[]): Uint8Array {
     const size = 4;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -314,9 +326,9 @@ export class SF2Builder {
     return this.createChunk(FOURCC_pbag, [buf]);
   }
 
-  private createPgen(items: any[]): Uint8Array { return this.createGen(items, FOURCC_pgen); }
+  private createPgen(items: GenEntry[]): Uint8Array { return this.createGen(items, FOURCC_pgen); }
 
-  private createInst(items: any[]): Uint8Array {
+  private createInst(items: InstEntry[]): Uint8Array {
     const size = 22;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -328,7 +340,7 @@ export class SF2Builder {
     return this.createChunk(FOURCC_inst, [buf]);
   }
 
-  private createIbag(items: any[]): Uint8Array {
+  private createIbag(items: BagEntry[]): Uint8Array {
     const size = 4;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -340,11 +352,11 @@ export class SF2Builder {
     return this.createChunk(FOURCC_ibag, [buf]);
   }
 
-  private createImod(items: any[]): Uint8Array { return this.createMod(items, FOURCC_imod); }
-  private createPmod(items: any[]): Uint8Array { return this.createMod(items, FOURCC_pmod); }
-  private createIgen(items: any[]): Uint8Array { return this.createGen(items, FOURCC_igen); }
+  private createImod(items: ModEntry[]): Uint8Array { return this.createMod(items, FOURCC_imod); }
+  private createPmod(items: ModEntry[]): Uint8Array { return this.createMod(items, FOURCC_pmod); }
+  private createIgen(items: GenEntry[]): Uint8Array { return this.createGen(items, FOURCC_igen); }
 
-  private createMod(items: any[], id: string): Uint8Array {
+  private createMod(items: ModEntry[], id: string): Uint8Array {
     const size = 10;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -356,10 +368,10 @@ export class SF2Builder {
       view.setUint16(off + 6, item.amtSrc, true);
       view.setUint16(off + 8, item.trans, true);
     });
-    return this.createChunk(id as any, [buf]);
+    return this.createChunk(id, [buf]);
   }
 
-  private createGen(items: any[], id: string): Uint8Array {
+  private createGen(items: GenEntry[], id: string): Uint8Array {
     const size = 4;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);
@@ -367,7 +379,7 @@ export class SF2Builder {
       const off = i * size;
       view.setUint16(off, item.op, true);
       if (typeof item.val === 'object') {
-        if (item.val.amount !== undefined) {
+        if ('amount' in item.val) {
           view.setInt16(off + 2, item.val.amount, true);
         } else {
           view.setUint8(off + 2, item.val.lo);
@@ -377,10 +389,10 @@ export class SF2Builder {
         view.setInt16(off + 2, item.val, true);
       }
     });
-    return this.createChunk(id as any, [buf]);
+    return this.createChunk(id, [buf]);
   }
 
-  private createShdr(items: any[]): Uint8Array {
+  private createShdr(items: SampleHeader[]): Uint8Array {
     const size = 46;
     const buf = new Uint8Array(items.length * size);
     const view = new DataView(buf.buffer);

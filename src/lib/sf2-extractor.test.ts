@@ -33,7 +33,22 @@ function createAudioBuffer(length = 64, sampleRate = 44100): AudioBuffer {
   } as unknown as AudioBuffer;
 }
 
+const mockCtx = new MockAudioContext() as unknown as AudioContext;
+
 describe('extractSamplesFromSF2', () => {
+  it('throws a descriptive error when passed corrupt/non-SF2 data', async () => {
+    const corrupt = new File([new Uint8Array([0, 1, 2, 3, 4, 5])], 'bad.sf2', { type: 'audio/sf2' });
+    await expect(extractSamplesFromSF2(corrupt, mockCtx)).rejects.toThrow(/parse/i);
+  });
+
+  it('returns an empty array for a valid SF2 with no presets', async () => {
+    const builder = new SF2Builder();
+    const sf2Data = builder.build('Empty');
+    const file = new File([sf2Data], 'empty.sf2', { type: 'audio/sf2' });
+    const extracted = await extractSamplesFromSF2(file, mockCtx);
+    expect(extracted).toHaveLength(0);
+  });
+
   it('preserves preset configuration parameters across export/import cycles', async () => {
     const builder = new SF2Builder();
     builder.addSample({

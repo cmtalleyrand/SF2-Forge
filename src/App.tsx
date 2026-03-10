@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, Download, Piano, Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Sparkles, Download, Piano, Loader2, KeyRound } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import JSZip from 'jszip';
 import { SF2Builder } from './lib/sf2-builder';
@@ -14,6 +14,16 @@ import { SampleList, SampleData } from './components/SampleList';
 import { RepairModal } from './components/RepairModal';
 import { FileInfo, UploadedFileInfo } from './components/FileInfo';
 
+function triggerDownload(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
 export default function App() {
   const [samples, setSamples] = useState<SampleData[]>([]);
   const [sfzRegions, setSfzRegions] = useState<SFZRegion[]>([]);
@@ -24,6 +34,10 @@ export default function App() {
   const [soundFontName, setSoundFontName] = useState('My SoundFont');
   const [exportMode, setExportMode] = useState<'all' | 'bank' | 'preset'>('all');
   const [forceBankZero, setForceBankZero] = useState(true);
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') ?? '');
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const isProcessingRef = useRef(false);
 
   const { activeNote, playNote, stopNote, getAudioCtx } = useAudioPlayer(samples);
 
@@ -41,6 +55,8 @@ export default function App() {
 
   const handleFileUpload = async (files: File[]) => {
     if (files.length === 0) return;
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
     setLoading(true);
     setLoadingStatus('Processing files...');
     const ctx = getAudioCtx();
@@ -197,6 +213,7 @@ export default function App() {
 
     setLoading(false);
     setLoadingStatus('');
+    isProcessingRef.current = false;
   };
 
   const updateSample = (id: string, field: keyof SampleData, value: any) => {
@@ -257,16 +274,16 @@ export default function App() {
   const autoMapSamples = async () => {
     if (samples.length === 0) return;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      alert("API Key is missing.");
+    if (!geminiApiKey) {
+      setShowApiKeyModal(true);
+      setApiKeyInput('');
       return;
     }
 
     setLoading(true);
     setLoadingStatus('Initializing AI...');
     try {
-      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const fileNames = samples.map(s => s.name);
       
       const chunkSize = 20;
@@ -309,9 +326,18 @@ export default function App() {
           }
         });
 
-        const result = JSON.parse(response.text || '{}');
-        const mapping = result.mapping || [];
-        mapping.forEach((m: any) => mappingMap.set(m.filename, m.midiNote));
+        let result: { mapping?: { filename: string; midiNote: number }[] } = {};
+        try {
+          result = JSON.parse(response.text || '{}');
+        } catch {
+          console.warn('Failed to parse Gemini response as JSON, skipping batch');
+        }
+        const mapping = Array.isArray(result.mapping) ? result.mapping : [];
+        mapping.forEach(m => {
+          if (typeof m.filename === 'string' && typeof m.midiNote === 'number' && m.midiNote >= 0 && m.midiNote <= 127) {
+            mappingMap.set(m.filename, m.midiNote);
+          }
+        });
       }
 
       setLoadingStatus('Applying mapping...');
@@ -340,7 +366,8 @@ export default function App() {
       });
     } catch (e) {
       console.error("AI Auto Map failed", e);
-      alert("AI Mapping failed. Please check console.");
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`AI Mapping failed: ${msg}`);
     } finally {
       setLoading(false);
       setLoadingStatus('');
@@ -375,18 +402,10 @@ export default function App() {
     try {
       if (exportMode === 'all') {
         const builder = new SF2Builder();
-        
-        samples.forEach(s => {
-          builder.addSample(forceBankZero ? { ...s, bank: 0 } : s);
-        });
+        samples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0 } : s));
         const sf2Data = builder.build(soundFontName);
         const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${soundFontName}.sf2`;
-        a.click();
-        URL.revokeObjectURL(url);
+        triggerDownload(URL.createObjectURL(blob), `${soundFontName}.sf2`);
       } else if (exportMode === 'bank') {
         const banks = new Map<number, SampleData[]>();
         samples.forEach(s => {
@@ -399,30 +418,18 @@ export default function App() {
           const builder = new SF2Builder();
           samples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0 } : s));
           const sf2Data = builder.build(soundFontName);
-          const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${soundFontName}.sf2`;
-          a.click();
-          URL.revokeObjectURL(url);
+          triggerDownload(URL.createObjectURL(new Blob([sf2Data], { type: 'audio/x-soundfont' })), `${soundFontName}.sf2`);
         } else {
           setLoadingStatus('Zipping multiple banks...');
           const zip = new JSZip();
           for (const [bank, bankSamples] of banks.entries()) {
             const builder = new SF2Builder();
-            // Force bank to 0 for the individual bank file if requested
             bankSamples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0 } : s));
             const sf2Data = builder.build(`${soundFontName} Bank ${bank}`);
             zip.file(`${soundFontName}_Bank_${bank}.sf2`, sf2Data);
           }
           const zipBlob = await zip.generateAsync({ type: 'blob' });
-          const url = URL.createObjectURL(zipBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${soundFontName}_Banks.zip`;
-          a.click();
-          URL.revokeObjectURL(url);
+          triggerDownload(URL.createObjectURL(zipBlob), `${soundFontName}_Banks.zip`);
         }
       } else if (exportMode === 'preset') {
         const presets = new Map<string, SampleData[]>();
@@ -438,33 +445,21 @@ export default function App() {
           const builder = new SF2Builder();
           samples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0, preset: 0 } : s));
           const sf2Data = builder.build(soundFontName);
-          const blob = new Blob([sf2Data], { type: 'audio/x-soundfont' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${soundFontName}.sf2`;
-          a.click();
-          URL.revokeObjectURL(url);
+          triggerDownload(URL.createObjectURL(new Blob([sf2Data], { type: 'audio/x-soundfont' })), `${soundFontName}.sf2`);
         } else {
           setLoadingStatus('Zipping multiple presets...');
           const zip = new JSZip();
-          for (const [key, presetSamples] of presets.entries()) {
+          for (const [, presetSamples] of presets.entries()) {
             const b = presetSamples[0].bank || 0;
             const p = presetSamples[0].preset || 0;
             const pName = presetSamples[0].presetName || `P${p}`;
             const builder = new SF2Builder();
-            // Force bank and preset to 0 for the individual preset file if requested
             presetSamples.forEach(s => builder.addSample(forceBankZero ? { ...s, bank: 0, preset: 0 } : s));
             const sf2Data = builder.build(`${soundFontName} ${pName}`);
             zip.file(`${soundFontName}_B${b}_${pName}.sf2`, sf2Data);
           }
           const zipBlob = await zip.generateAsync({ type: 'blob' });
-          const url = URL.createObjectURL(zipBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${soundFontName}_Presets.zip`;
-          a.click();
-          URL.revokeObjectURL(url);
+          triggerDownload(URL.createObjectURL(zipBlob), `${soundFontName}_Presets.zip`);
         }
       }
     } catch (e) {
@@ -502,9 +497,16 @@ export default function App() {
           >
             Bank 0
           </button>
-          <button 
+          <button
+            className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-3 rounded-lg flex items-center gap-1.5 hover:bg-[#3c3c3e] transition-colors whitespace-nowrap"
+            onClick={() => { setApiKeyInput(geminiApiKey); setShowApiKeyModal(true); }}
+            title={geminiApiKey ? 'Gemini API key is set' : 'Set Gemini API key for AI Auto-Map'}
+          >
+            <KeyRound className={`w-4 h-4 ${geminiApiKey ? 'text-[#50fa7b]' : 'text-[#ff6b6b]'}`} />
+          </button>
+          <button
             className="bg-[#2c2c2e] border border-[#444] text-white text-sm font-medium h-10 px-4 rounded-lg flex items-center gap-2 hover:bg-[#3c3c3e] transition-colors disabled:opacity-50 whitespace-nowrap"
-            onClick={autoMapSamples} 
+            onClick={autoMapSamples}
             disabled={loading || samples.length === 0}
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#bb86fc]" /> : <Sparkles className="w-4 h-4 text-[#bb86fc]" />}
@@ -596,10 +598,57 @@ export default function App() {
       </main>
 
       {repairResult && (
-        <RepairModal 
-          result={repairResult} 
-          onClose={() => setRepairResult(null)} 
+        <RepairModal
+          result={repairResult}
+          onClose={() => setRepairResult(null)}
         />
+      )}
+
+      {showApiKeyModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1c1c1e] p-6 rounded-xl border border-[#333] w-full max-w-md flex flex-col gap-4">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-[#bb86fc]" />
+              Gemini API Key
+            </h2>
+            <p className="text-[#888] text-sm">Your key is stored only in this browser (localStorage) and never sent anywhere except Google's API.</p>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              placeholder="Paste your Gemini API key here"
+              className="bg-[#111] border border-[#333] text-white px-3 py-2 rounded-lg text-sm focus:border-[#bb86fc] outline-none"
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="px-4 py-2 rounded font-bold text-[#888] hover:text-white hover:bg-[#333] transition-colors"
+              >
+                Cancel
+              </button>
+              {geminiApiKey && (
+                <button
+                  onClick={() => { localStorage.removeItem('gemini_api_key'); setGeminiApiKey(''); setShowApiKeyModal(false); }}
+                  className="px-4 py-2 rounded font-bold text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-colors"
+                >
+                  Clear Key
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const key = apiKeyInput.trim();
+                  if (key) { localStorage.setItem('gemini_api_key', key); setGeminiApiKey(key); }
+                  setShowApiKeyModal(false);
+                }}
+                className="bg-[#bb86fc] text-black font-bold py-2 px-4 rounded hover:bg-[#a370f7] transition-colors disabled:opacity-50"
+                disabled={!apiKeyInput.trim()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

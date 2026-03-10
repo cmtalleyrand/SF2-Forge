@@ -95,5 +95,54 @@ describe('sfz-parser', () => {
       expect(regions[1].sample).toBe('C:\\Users\\Name\\Desktop\\my snare.wav');
       expect(regions[1].key).toBe('38');
     });
+
+    it('should return an empty array for empty input', () => {
+      expect(parseSFZ('')).toHaveLength(0);
+      expect(parseSFZ('// just a comment')).toHaveLength(0);
+    });
+
+    it('should handle ADSR envelope opcodes', () => {
+      const sfz = `
+<region> sample=pad.wav ampeg_attack=0.25 ampeg_decay=0.5 ampeg_sustain=80 ampeg_release=1.2
+      `;
+      const regions = parseSFZ(sfz);
+      expect(regions).toHaveLength(1);
+      expect(regions[0].ampeg_attack).toBe('0.25');
+      expect(regions[0].ampeg_decay).toBe('0.5');
+      expect(regions[0].ampeg_sustain).toBe('80');
+      expect(regions[0].ampeg_release).toBe('1.2');
+    });
+
+    it('should handle loop opcodes', () => {
+      const sfz = `
+<region> sample=loop.wav loop_mode=loop_continuous loop_start=100 loop_end=500
+      `;
+      const regions = parseSFZ(sfz);
+      expect(regions).toHaveLength(1);
+      expect(regions[0].loop_mode).toBe('loop_continuous');
+      expect(regions[0].loop_start).toBe('100');
+      expect(regions[0].loop_end).toBe('500');
+    });
+
+    it('should silently skip opcodes that appear before any header', () => {
+      const sfz = `sample=orphan.wav key=60
+<region> sample=valid.wav key=61`;
+      const regions = parseSFZ(sfz);
+      expect(regions).toHaveLength(1);
+      expect(regions[0].sample).toBe('valid.wav');
+    });
+
+    it('should reset group settings for new group headers', () => {
+      const sfz = `
+<group> volume=5
+<region> sample=a.wav key=60
+<group> volume=10
+<region> sample=b.wav key=62
+      `;
+      const regions = parseSFZ(sfz);
+      expect(regions).toHaveLength(2);
+      expect(regions[0].volume).toBe('5');
+      expect(regions[1].volume).toBe('10');
+    });
   });
 });
