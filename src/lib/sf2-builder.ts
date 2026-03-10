@@ -73,6 +73,15 @@ function sustainToCentibels(sustainLevel: number): number {
   return Math.max(0, Math.min(1440, Math.round(-db * 10)));
 }
 
+function resolveEffectiveLoopBounds(sample: Sample): { start: number; end: number } {
+  const sampleLength = sample.buffer.length;
+  const rawLoopStart = sample.loopStart ?? 8;
+  const rawLoopEnd = sample.loopEnd ?? (sampleLength - 8);
+  const loopStart = Math.max(0, Math.min(rawLoopStart, sampleLength));
+  const loopEnd = Math.max(loopStart, Math.min(rawLoopEnd, sampleLength));
+  return { start: loopStart, end: loopEnd };
+}
+
 export class SF2Builder {
   private samples: Sample[] = [];
 
@@ -85,15 +94,28 @@ export class SF2Builder {
     const sampleHeaders: SampleHeader[] = [];
     let currentOffset = 0;
 
-    const bufferToSampleIndex = new Map<AudioBuffer, number>();
+    const bufferVariants = new Map<AudioBuffer, Map<string, number>>();
+    const sampleToSampleIndex = new Map<Sample, number>();
     const uniqueSamples: Sample[] = [];
 
     // Only process samples that are actually in this builder instance
     for (const s of this.samples) {
-      if (!bufferToSampleIndex.has(s.buffer)) {
-        bufferToSampleIndex.set(s.buffer, uniqueSamples.length);
-        uniqueSamples.push(s);
+      const effectiveLoop = resolveEffectiveLoopBounds(s);
+      const variantKey = `${s.sampleRate}|${s.rootKey}|${effectiveLoop.start}|${effectiveLoop.end}`;
+      let variantsForBuffer = bufferVariants.get(s.buffer);
+      if (!variantsForBuffer) {
+        variantsForBuffer = new Map<string, number>();
+        bufferVariants.set(s.buffer, variantsForBuffer);
       }
+
+      let sampleIndex = variantsForBuffer.get(variantKey);
+      if (sampleIndex === undefined) {
+        sampleIndex = uniqueSamples.length;
+        uniqueSamples.push(s);
+        variantsForBuffer.set(variantKey, sampleIndex);
+      }
+
+      sampleToSampleIndex.set(s, sampleIndex);
     }
 
     for (const sample of uniqueSamples) {
@@ -106,10 +128,9 @@ export class SF2Builder {
 
       const start = currentOffset;
       const end = currentOffset + floatData.length;
-      const rawLoopStart = sample.loopStart !== undefined ? start + sample.loopStart : start + 8;
-      const rawLoopEnd = sample.loopEnd !== undefined ? start + sample.loopEnd : end - 8;
-      const loopStart = Math.max(start, Math.min(rawLoopStart, end));
-      const loopEnd = Math.max(loopStart, Math.min(rawLoopEnd, end));
+      const effectiveLoop = resolveEffectiveLoopBounds(sample);
+      const loopStart = start + effectiveLoop.start;
+      const loopEnd = start + effectiveLoop.end;
 
       sampleDataParts.push(pcm16);
 
@@ -189,7 +210,7 @@ export class SF2Builder {
 
       // Add Instrument Zones
       for (const s of presetSamples) {
-        const sampleIndex = bufferToSampleIndex.get(s.buffer) ?? 0;
+        const sampleIndex = sampleToSampleIndex.get(s) ?? 0;
         ibagList.push({ genNdx: igenList.length, modNdx: 0 });
         igenList.push({ op: GEN_KEYRANGE, val: { lo: s.lowKey, hi: s.highKey } });
         igenList.push({ op: GEN_OVERRIDINGROOTKEY, val: { amount: s.rootKey } });
