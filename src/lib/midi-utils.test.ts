@@ -45,5 +45,29 @@ describe('midi-utils', () => {
       expect(noteToMidi('C')).toBeNull();
       expect(noteToMidi('invalid')).toBeNull();
     });
+
+    it('should return null for out-of-range MIDI numbers', () => {
+      expect(noteToMidi(-1)).toBeNull();
+      expect(noteToMidi(128)).toBeNull();
+      expect(noteToMidi(999)).toBeNull();
+    });
+
+    it('should return null for out-of-range note names', () => {
+      // C-2 = -12, below MIDI range
+      expect(noteToMidi('C-2')).toBeNull();
+      // G9 = 127, exactly at the boundary
+      expect(noteToMidi('G9')).toBe(127);
+      // G#9 = 128, above MIDI range
+      expect(noteToMidi('G#9')).toBeNull();
+    });
+
+    it('should return null for out-of-range numeric strings', () => {
+      expect(noteToMidi('128')).toBeNull();
+      expect(noteToMidi('-1')).toBeNull();
+    });
+
+    it('should return null for non-integer numbers', () => {
+      expect(noteToMidi(60.5)).toBeNull();
+    });
   });
 });

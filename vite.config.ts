@@ -20,6 +20,7 @@ function normalizeBasePath(rawBasePath: string | undefined): string {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const basePath = normalizeBasePath(env.VITE_BASE_PATH);
+  void env; // env is only used for basePath; API key is managed via localStorage
 
   return {
     base: basePath,
@@ -31,9 +32,7 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
     ],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
+
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

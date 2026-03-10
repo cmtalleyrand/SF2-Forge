@@ -1,14 +1,23 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { SampleData } from '../components/SampleList';
+import { resolveAudioContextConstructor } from '../lib/browser-compat';
 
 export function useAudioPlayer(samples: SampleData[]) {
   const [activeNote, setActiveNote] = useState<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const activeSources = useRef(new Map<number, AudioBufferSourceNode>());
 
+  useEffect(() => {
+    return () => {
+      audioCtxRef.current?.close();
+      audioCtxRef.current = null;
+    };
+  }, []);
+
   const getAudioCtx = () => {
     if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextCtor = resolveAudioContextConstructor();
+      audioCtxRef.current = new AudioContextCtor();
     }
     return audioCtxRef.current;
   };
