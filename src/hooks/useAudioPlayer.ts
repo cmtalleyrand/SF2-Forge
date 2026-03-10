@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { SampleData } from '../components/SampleList';
+import { resolveAudioContextConstructor } from '../lib/browser-compat';
 
 export function useAudioPlayer(samples: SampleData[]) {
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -15,7 +16,8 @@ export function useAudioPlayer(samples: SampleData[]) {
 
   const getAudioCtx = () => {
     if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioContext();
+      const AudioContextCtor = resolveAudioContextConstructor();
+      audioCtxRef.current = new AudioContextCtor();
     }
     return audioCtxRef.current;
   };

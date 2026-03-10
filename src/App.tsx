@@ -13,6 +13,7 @@ import { UploadZone } from './components/UploadZone';
 import { SampleList, SampleData } from './components/SampleList';
 import { RepairModal } from './components/RepairModal';
 import { FileInfo, UploadedFileInfo } from './components/FileInfo';
+import { readPersistedGeminiApiKey } from './lib/browser-compat';
 
 function triggerDownload(url: string, filename: string) {
   const a = document.createElement('a');
@@ -34,7 +35,7 @@ export default function App() {
   const [soundFontName, setSoundFontName] = useState('My SoundFont');
   const [exportMode, setExportMode] = useState<'all' | 'bank' | 'preset'>('all');
   const [forceBankZero, setForceBankZero] = useState(true);
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') ?? '');
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => readPersistedGeminiApiKey());
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const isProcessingRef = useRef(false);
