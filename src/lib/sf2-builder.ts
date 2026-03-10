@@ -85,15 +85,27 @@ export class SF2Builder {
     const sampleHeaders: SampleHeader[] = [];
     let currentOffset = 0;
 
-    const bufferToSampleIndex = new Map<AudioBuffer, number>();
+    const bufferVariants = new Map<AudioBuffer, Map<string, number>>();
+    const sampleToSampleIndex = new Map<Sample, number>();
     const uniqueSamples: Sample[] = [];
 
     // Only process samples that are actually in this builder instance
     for (const s of this.samples) {
-      if (!bufferToSampleIndex.has(s.buffer)) {
-        bufferToSampleIndex.set(s.buffer, uniqueSamples.length);
-        uniqueSamples.push(s);
+      const variantKey = `${s.sampleRate}|${s.rootKey}|${s.loopStart ?? 'auto'}|${s.loopEnd ?? 'auto'}`;
+      let variantsForBuffer = bufferVariants.get(s.buffer);
+      if (!variantsForBuffer) {
+        variantsForBuffer = new Map<string, number>();
+        bufferVariants.set(s.buffer, variantsForBuffer);
       }
+
+      let sampleIndex = variantsForBuffer.get(variantKey);
+      if (sampleIndex === undefined) {
+        sampleIndex = uniqueSamples.length;
+        uniqueSamples.push(s);
+        variantsForBuffer.set(variantKey, sampleIndex);
+      }
+
+      sampleToSampleIndex.set(s, sampleIndex);
     }
 
     for (const sample of uniqueSamples) {
@@ -189,7 +201,7 @@ export class SF2Builder {
 
       // Add Instrument Zones
       for (const s of presetSamples) {
-        const sampleIndex = bufferToSampleIndex.get(s.buffer) ?? 0;
+        const sampleIndex = sampleToSampleIndex.get(s) ?? 0;
         ibagList.push({ genNdx: igenList.length, modNdx: 0 });
         igenList.push({ op: GEN_KEYRANGE, val: { lo: s.lowKey, hi: s.highKey } });
         igenList.push({ op: GEN_OVERRIDINGROOTKEY, val: { amount: s.rootKey } });

@@ -132,4 +132,44 @@ describe('SF2Builder', () => {
     expect(parsed.presets.map(p => p.header.bank).sort((a, b) => a - b)).toEqual([0, 1]);
     expect(parsed.presets.map(p => p.header.preset)).toEqual([5, 5]);
   });
+
+  it('should not reuse a sample header when loop points differ on the same AudioBuffer', () => {
+    const builder = new SF2Builder();
+    const sharedBuffer = {
+      length: 256,
+      sampleRate: 44100,
+      numberOfChannels: 1,
+      duration: 256 / 44100,
+      copyFromChannel: () => {},
+      copyToChannel: () => {},
+      getChannelData: () => new Float32Array(256)
+    } as unknown as AudioBuffer;
+
+    const makeSample = (id: string, loopStart: number, loopEnd: number): SampleData => ({
+      id,
+      name: `test-${id}`,
+      file: new File([], `test-${id}.wav`),
+      buffer: sharedBuffer,
+      rootKey: 60,
+      lowKey: 0,
+      highKey: 127,
+      sampleRate: 44100,
+      bank: 0,
+      preset: 0,
+      loopMode: 'loop_continuous',
+      loopStart,
+      loopEnd
+    });
+
+    builder.addSample(makeSample('a', 20, 120));
+    builder.addSample(makeSample('b', 40, 140));
+    const sf2Data = builder.build('Test SoundFont');
+
+    const parsed = new SoundFont2(sf2Data);
+    const instrumentZones = parsed.presets[0].zones[0].instrument.zones.filter(z => !!z.sample);
+
+    expect(instrumentZones.length).toBe(2);
+    expect(instrumentZones[0].sample?.header.startLoop).not.toBe(instrumentZones[1].sample?.header.startLoop);
+    expect(instrumentZones[0].sample?.header.endLoop).not.toBe(instrumentZones[1].sample?.header.endLoop);
+  });
 });
